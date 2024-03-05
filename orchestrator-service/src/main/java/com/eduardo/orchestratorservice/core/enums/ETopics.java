@@ -1,4 +1,4 @@
-package com.eduardo.orchestratorservice;
+package com.eduardo.orchestratorservice.core.enums;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
