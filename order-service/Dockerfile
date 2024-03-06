@@ -1,4 +1,6 @@
 FROM openjdk:17-alpine
-COPY build/libs/*.jar app.jar
-EXPOSE 8092
-ENTRYPOINT ["java", "-jar", "app.jar"]
+RUN mkdir /app
+WORKDIR /app
+COPY target/*.jar /app/app.jar
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+EXPOSE 3000
