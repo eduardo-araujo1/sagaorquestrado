@@ -12,15 +12,15 @@ import org.springframework.stereotype.Component;
 @AllArgsConstructor
 public class EventConsumer {
 
-    private final JsonUtil jsonUtil;
     private final EventService service;
+    private final JsonUtil jsonUtil;
+
     @KafkaListener(
             groupId = "${spring.kafka.consumer.group-id}",
             topics = "${spring.kafka.topic.notify-ending}"
-
     )
-    public void consumeNotifyEndingEvent(String payload){
-        log.info("Recebendo evento de notificação de encerramento {} do tópico de encerramento de notificação", payload);
+    public void consumeNotifyEndingEvent(String payload) {
+        log.info("Receiving ending notification event {} from notify-ending topic", payload);
         var event = jsonUtil.toEvent(payload);
         service.notifyEnding(event);
     }

@@ -11,9 +11,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 @Document(collection = "event")
 public class Event {
 
@@ -26,5 +26,4 @@ public class Event {
     private String status;
     private List<History> eventHistory;
     private LocalDateTime createdAt;
-
 }
