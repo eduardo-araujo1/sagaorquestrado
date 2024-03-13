@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
-import static com.eduardo.productvalidationservice.core.enums.ESagaStatus.SUCCESS;
+import static com.eduardo.productvalidationservice.core.enums.ESagaStatus.*;
 import static org.springframework.util.ObjectUtils.isEmpty;
 
 @Slf4j
@@ -31,32 +31,32 @@ public class ProductValidationService {
     private final ProductRepository productRepository;
     private final ValidationRepository validationRepository;
 
-    public void validateExistingProducts(Event event){
+    public void validateExistingProducts(Event event) {
         try {
             checkCurrentValidation(event);
             createValidation(event, true);
             handleSuccess(event);
-        }catch (Exception ex){
-            log.error("Error trying to validate products", ex);
+        } catch (Exception ex) {
+            log.error("Error trying to validate product: ", ex);
             handleFailCurrentNotExecuted(event, ex.getMessage());
         }
         producer.sendEvent(jsonUtil.toJson(event));
     }
 
-    private void validateProductsInformed(Event event){
-        if (isEmpty(event.getPayload()) || isEmpty(event.getPayload().getProducts())){
-            throw new ValidationException("Product list is empty.");
+    private void validateProductsInformed(Event event) {
+        if (isEmpty(event.getPayload()) || isEmpty(event.getPayload().getProducts())) {
+            throw new ValidationException("Product list is empty!");
         }
-        if (isEmpty(event.getPayload().getId()) || isEmpty(event.getPayload().getTransactionId())){
-            throw new ValidationException("OrderID and TransactionID must be informed.");
+        if (isEmpty(event.getPayload().getId()) || isEmpty(event.getTransactionId())) {
+            throw new ValidationException("OrderID and TransactionID must be informed!");
         }
     }
 
-    private void checkCurrentValidation(Event event){
+    private void checkCurrentValidation(Event event) {
         validateProductsInformed(event);
         if (validationRepository.existsByOrderIdAndTransactionId(
                 event.getOrderId(), event.getTransactionId())) {
-            throw new ValidationException("There's another transactionId for this validation");
+            throw new ValidationException("There's another transactionId for this validation.");
         }
         event.getPayload().getProducts().forEach(product -> {
             validateProductInformed(product);
@@ -64,19 +64,19 @@ public class ProductValidationService {
         });
     }
 
-    private void validateProductInformed(OrderProducts product){
-        if (isEmpty(product.getProduct()) || isEmpty(product.getProduct().getCode())){
-            throw new ValidationException("Product must be informed.");
+    private void validateProductInformed(OrderProducts product) {
+        if (isEmpty(product.getProduct()) || isEmpty(product.getProduct().getCode())) {
+            throw new ValidationException("Product must be informed!");
         }
     }
 
-    private void validateExistingProduct(String code){
-        if (!productRepository.existsByCode(code)){
+    private void validateExistingProduct(String code) {
+        if (!productRepository.existsByCode(code)) {
             throw new ValidationException("Product does not exists in database!");
         }
     }
 
-    private void createValidation(Event event, boolean success){
+    private void createValidation(Event event, boolean success) {
         var validation = Validation
                 .builder()
                 .orderId(event.getPayload().getId())
@@ -86,13 +86,13 @@ public class ProductValidationService {
         validationRepository.save(validation);
     }
 
-    private void handleSuccess(Event event){
+    private void handleSuccess(Event event) {
         event.setStatus(SUCCESS);
         event.setSource(CURRENT_SOURCE);
-        addHistory(event,"Products are validated successfully!");
+        addHistory(event, "Products are validated successfully!");
     }
 
-    private void addHistory(Event event, String message){
+    private void addHistory(Event event, String message) {
         var history = History
                 .builder()
                 .source(event.getSource())
@@ -103,5 +103,27 @@ public class ProductValidationService {
         event.addToHistory(history);
     }
 
+    private void handleFailCurrentNotExecuted(Event event, String message) {
+        event.setStatus(ROLLBACK_PENDING);
+        event.setSource(CURRENT_SOURCE);
+        addHistory(event, "Fail to validate products: ".concat(message));
+    }
 
+    public void rollbackEvent(Event event) {
+        changeValidationToFail(event);
+        event.setStatus(FAIL);
+        event.setSource(CURRENT_SOURCE);
+        addHistory(event, "Rollback executed on product validation!");
+        producer.sendEvent(jsonUtil.toJson(event));
+    }
+
+    private void changeValidationToFail(Event event) {
+        validationRepository
+                .findByOrderIdAndTransactionId(event.getOrderId(), event.getTransactionId())
+                .ifPresentOrElse(validation -> {
+                            validation.setSuccess(false);
+                            validationRepository.save(validation);
+                        },
+                        () -> createValidation(event, false));
+    }
 }
