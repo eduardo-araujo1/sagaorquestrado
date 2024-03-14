@@ -2,13 +2,15 @@ package com.eduardo.inventoryservice.core.model;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "inventory")
+@Builder
+@Table(name = "order_inventory")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
