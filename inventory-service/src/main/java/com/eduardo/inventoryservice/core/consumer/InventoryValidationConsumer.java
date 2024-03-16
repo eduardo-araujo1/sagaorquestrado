@@ -1,5 +1,6 @@
 package com.eduardo.inventoryservice.core.consumer;
 
+import com.eduardo.inventoryservice.core.service.InventoryService;
 import com.eduardo.inventoryservice.core.utils.JsonUtil;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 public class InventoryValidationConsumer {
 
     private final JsonUtil jsonUtil;
+    private final InventoryService inventoryService;
     @KafkaListener(
             groupId = "${spring.kafka.consumer.group-id}",
             topics = "${spring.kafka.topic.inventory-success}"
@@ -20,7 +22,7 @@ public class InventoryValidationConsumer {
     public void consumeSuccessEvent(String payload){
         log.info("Recebendo evento de sucesso {} do topico inventory-success", payload);
         var event = jsonUtil.toEvent(payload);
-        log.info(event.toString());
+        inventoryService.updateInventory(event);
     }
 
     @KafkaListener(
@@ -31,6 +33,6 @@ public class InventoryValidationConsumer {
     public void consumeFailEvent(String payload){
         log.info("Recebendo rollback event {} do topico inventory-fail", payload);
         var event = jsonUtil.toEvent(payload);
-        log.info(event.toString());
+        inventoryService.rollbackInventory(event);
     }
 }

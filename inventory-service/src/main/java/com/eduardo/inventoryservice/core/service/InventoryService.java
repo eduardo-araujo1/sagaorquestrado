@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
-import static com.eduardo.inventoryservice.core.enums.ESagaStatus.SUCCESS;
+import static com.eduardo.inventoryservice.core.enums.ESagaStatus.*;
 
 @Slf4j
 @Service
@@ -31,25 +31,27 @@ public class InventoryService {
     private final InventoryRepository inventoryRepository;
     private final OrderInventoryRepository orderInventoryRepository;
 
-    public void updateInventory(Event event){
+    public void updateInventory(Event event) {
         try {
             checkCurrentValidation(event);
             createOrderInventory(event);
+            updateInventory(event.getPayload());
             handleSuccess(event);
-
-        }catch (Exception ex) {
+        } catch (Exception ex) {
             log.error("Error trying to update inventory: ", ex);
+            handleFailCurrentNotExecuted(event, ex.getMessage());
         }
         producer.sendEvent(jsonUtil.toJson(event));
     }
 
     private void checkCurrentValidation(Event event) {
-        if (orderInventoryRepository.existsByOrderIdAndTransactionId(event.getPayload().getId(), event.getTransactionId())) {
+        if (orderInventoryRepository.existsByOrderIdAndTransactionId(
+                event.getPayload().getId(), event.getTransactionId())) {
             throw new ValidationException("There's another transactionId for this validation.");
         }
     }
 
-    private void createOrderInventory(Event event){
+    private void createOrderInventory(Event event) {
         event
                 .getPayload()
                 .getProducts()
@@ -60,7 +62,9 @@ public class InventoryService {
                 });
     }
 
-    private OrderInventory createOrderInventory(Event event, OrderProducts product, Inventory inventory){
+    private OrderInventory createOrderInventory(Event event,
+                                                OrderProducts product,
+                                                Inventory inventory) {
         return OrderInventory
                 .builder()
                 .inventory(inventory)
@@ -72,19 +76,17 @@ public class InventoryService {
                 .build();
     }
 
-    private void updateInventory(Order order){
-        order
-                .getProducts()
-                .forEach(product -> {
-                    var inventory = findInventoryByProductCode(product.getProduct().getCode());
-                    checkInventory(inventory.getAvailable(), product.getQuantity());
-                    inventory.setAvailable(inventory.getAvailable() - product.getQuantity());
-                    inventoryRepository.save(inventory);
-                });
+    private void updateInventory(Order order) {
+        order.getProducts().forEach(product -> {
+            var inventory = findInventoryByProductCode(product.getProduct().getCode());
+            checkInventory(inventory.getAvailable(), product.getQuantity());
+            inventory.setAvailable(inventory.getAvailable() - product.getQuantity());
+            inventoryRepository.save(inventory);
+        });
     }
 
-    private void checkInventory(int available, int orderQuantity){
-        if (orderQuantity > available){
+    private void checkInventory(int available, int orderQuantity) {
+        if (orderQuantity > available) {
             throw new ValidationException("Product is out of stock!");
         }
     }
@@ -92,7 +94,7 @@ public class InventoryService {
     private void handleSuccess(Event event) {
         event.setStatus(SUCCESS);
         event.setSource(CURRENT_SOURCE);
-        addHistory(event, "Inventory updated successfully");
+        addHistory(event, "Inventory updated successfully!");
     }
 
     private void addHistory(Event event, String message) {
@@ -106,9 +108,39 @@ public class InventoryService {
         event.addToHistory(history);
     }
 
-    private Inventory findInventoryByProductCode(String productCode){
+    private void handleFailCurrentNotExecuted(Event event, String message) {
+        event.setStatus(ROLLBACK_PENDING);
+        event.setSource(CURRENT_SOURCE);
+        addHistory(event, "Fail to update inventory: ".concat(message));
+    }
+
+    public void rollbackInventory(Event event) {
+        event.setStatus(FAIL);
+        event.setSource(CURRENT_SOURCE);
+        try {
+            returnInventoryToPreviousValues(event);
+            addHistory(event, "Rollback executed for inventory!");
+        } catch (Exception ex) {
+            addHistory(event, "Rollback not executed for inventory: ".concat(ex.getMessage()));
+        }
+        producer.sendEvent(jsonUtil.toJson(event));
+    }
+
+    private void returnInventoryToPreviousValues(Event event) {
+        orderInventoryRepository
+                .findByOrderIdAndTransactionId(event.getPayload().getId(), event.getTransactionId())
+                .forEach(orderInventory -> {
+                    var inventory = orderInventory.getInventory();
+                    inventory.setAvailable(orderInventory.getOldQuantity());
+                    inventoryRepository.save(inventory);
+                    log.info("Restored inventory for order {}: from {} to {}",
+                            event.getPayload().getId(), orderInventory.getNewQuantity(), inventory.getAvailable());
+                });
+    }
+
+    private Inventory findInventoryByProductCode(String productCode) {
         return inventoryRepository
                 .findByProductCode(productCode)
-                .orElseThrow(() -> new ValidationException("Inventory not found by informerd product."));
+                .orElseThrow(() -> new ValidationException("Inventory not found by informed product."));
     }
 }
